@@ -1,5 +1,7 @@
 package GUI_Appic_Infos;
 
+import Request.RequestControlID;
+
 import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -23,13 +25,10 @@ public class GUI_Applic_Infos extends JFrame
     private Socket _connexion = null;
     private ObjectInputStream ois = null;
     private ObjectOutputStream oos = null;
-    private PrintWriter _writer = null;
-    private BufferedInputStream _reader = null;
     private DefaultListModel<String> dlm;
     private String codeProvider = "BC"; //CryptixCrypto";
     private MessageDigest md;
     private ArrayList<String> _arrayOfArg = new ArrayList<>();
-
 
 
 
@@ -59,6 +58,8 @@ public class GUI_Applic_Infos extends JFrame
         // se connecter au serveur
         try {
             _connexion = new Socket(_host, _port);
+            oos = new ObjectOutputStream(_connexion.getOutputStream());
+            ois = new ObjectInputStream(_connexion.getInputStream());
             dlm.addElement("Connexion Serveur Informations OK");
             System.out.println("Connexion Serveur Informations OK");
         } catch (UnknownHostException e) {
@@ -66,8 +67,6 @@ public class GUI_Applic_Infos extends JFrame
         } catch (IOException e) {
             e.printStackTrace();
         }
-        _writer = new PrintWriter(_connexion.getOutputStream(), true);
-        _reader = new BufferedInputStream(_connexion.getInputStream());
 
 
         // listeners des boutons
@@ -83,14 +82,21 @@ public class GUI_Applic_Infos extends JFrame
     }
 
     private void btnInfoCoursMonetaires_handler() throws IOException {
-        String request = MakeRequest("INFO_COURS", _arrayOfArg );
 
-        String response = SendRequest(request);
+        RequestControlID request = null;
+        RequestControlID response = null;
+
+        request = new RequestControlID("INFOP", RequestControlID.REQUEST_INFO_COURS);
+
+        try {
+            response = SendRequest(request);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         dlm.addElement("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
-        dlm.addElement("String reponse serveur : *" + response + "*");
+        dlm.addElement("String reponse serveur : *" + response.toString() + "*");
 
-
-        AnalyseReponse("INFO_COURS",response);
+        AnalyseReponse(response);
 
     }
 
@@ -98,22 +104,27 @@ public class GUI_Applic_Infos extends JFrame
 
 
 
-    private void AnalyseReponse(String cmd, String response) {
-        String tokfull = response.replaceAll(_endOfLine, "");
-        String[] tok = tokfull.split(_separator);
-        String result = tok[0];
+    private void AnalyseReponse(RequestControlID response) {
+        switch(response.getType()) {
+            case RequestControlID.REQUEST_INFO_COURS:
 
-        switch(cmd){
-            case "INFO_COURS":
-                if(result.equals("ACK")) {
+
+
+                /////
+                if(response.getResult().equals("ACK")) {
 
                     dlm.clear();
                     dlm.addElement("Les cours des principales unités monétaires (Euro, Dollar US, Yen, Franc suisse, Livre sterling) :");
 
                     // Lire reponse du serveur
-                    String nbreMonDiff = tok[1];
+                    String data = response.getData();
+                    String tokfull = data.replaceAll(_endOfLine, "");
+                    String[] tok = tokfull.split(_separator);
 
-                    for(int i=0, j=2; i < Integer.parseInt(nbreMonDiff); i++, j++)
+                    // recup nombre des monaies different
+                    String nbreMonDiff = tok[0];
+
+                    for(int i=0, j=1; i < Integer.parseInt(nbreMonDiff); i++, j++)
                     {
 
                         String[] data_monnaie = tok[j].split("\\|");
@@ -129,21 +140,20 @@ public class GUI_Applic_Infos extends JFrame
 
                 break;
             default :
-                response = "Commande inconnu !";
                 break;
         }
 
     }
 
-    private String SendRequest(String request) throws IOException {
+    private RequestControlID SendRequest(RequestControlID request) throws IOException {
 
-        _writer.write(request);
-        _writer.flush();
+        oos.writeObject(request);
+        oos.flush();
 
         System.out.println("Commande [" + request + "] envoyée au serveur");
 
         //On attend la réponse
-        String response = read();
+        RequestControlID response = read();
         System.out.println("\t * " + response + " : Réponse reçue " + response);
 
         return response;
@@ -163,12 +173,13 @@ public class GUI_Applic_Infos extends JFrame
     }
 
     //Méthode pour lire les réponses du serveur
-    private String read() throws IOException{
-        String response = "";
-        int stream;
-        byte[] b = new byte[4096];
-        stream = _reader.read(b);
-        response = new String(b, 0, stream);
+    private RequestControlID read() throws IOException{
+        RequestControlID response = null;
+        try {
+            response = (RequestControlID)ois.readObject();
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
         return response;
     }
 
